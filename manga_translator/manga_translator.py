@@ -396,6 +396,16 @@ class MangaTranslator():
             # If no text was found result is intermediate image product
             ctx.result = ctx.upscaled
             return await self._revert_upscale(ctx)
+        
+        if ctx.skip_lang is not None :
+            skip_langs = ctx.skip_lang.split(',')
+            detected_text = ''.join([l.text for l in ctx.textlines])
+            source_language = LANGDETECT_MAP.get(langdetect.detect(detected_text), 'UNKNOWN')
+            if source_language in skip_langs :
+                print('skip due to', source_language, 'in', skip_langs)
+                await self._report_progress('finished', True)
+                ctx.result = ctx.upscaled
+                return await self._revert_upscale(ctx)
 
         # -- Textline merge
         await self._report_progress('textline_merge')
@@ -413,9 +423,11 @@ class MangaTranslator():
 
         if not ctx.text_regions:
             await self._report_progress('error-translating', True)
+            ctx.result = ctx.upscaled
             return await self._revert_upscale(ctx)
         elif ctx.text_regions == 'cancel':
             await self._report_progress('cancelled', True)
+            ctx.result = ctx.upscaled
             return await self._revert_upscale(ctx)
 
         # -- Mask refinement
