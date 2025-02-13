@@ -90,7 +90,8 @@ class Qwen2Translator(OfflineTranslator, ConfigGPT):
 
         translations = []
         self.logger.debug('-- Qwen2 Response --\n' + response)
-        new_translations = re.split(r'<\|\d+\|>', response)
+        # Remove any text preceeding the first translation.
+        new_translations = re.split(r'<\|\d+\|>', 'pre_1\n' + response)[1:]
 
         # When there is only one query chatgpt likes to exclude the <|1|>
         if not new_translations[0].strip():

@@ -11,38 +11,13 @@ import asyncio
 import time
 from typing import List, Dict
 from omegaconf import OmegaConf
-from .common import CommonTranslator, MissingAPIKeyException
+from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
 from .keys import OLLAMA_API_KEY, OLLAMA_API_BASE, OLLAMA_MODEL, OLLAMA_MODEL_CONF
 
 
 class OllamaTranslator(ConfigGPT, CommonTranslator):
-    _LANGUAGE_CODE_MAP = {
-        'CHS': 'Simplified Chinese',
-        'CHT': 'Traditional Chinese',
-        'CSY': 'Czech',
-        'NLD': 'Dutch',
-        'ENG': 'English',
-        'FRA': 'French',
-        'DEU': 'German',
-        'HUN': 'Hungarian',
-        'ITA': 'Italian',
-        'JPN': 'Japanese',
-        'KOR': 'Korean',
-        'PLK': 'Polish',
-        'PTB': 'Portuguese',
-        'ROM': 'Romanian',
-        'RUS': 'Russian',
-        'ESP': 'Spanish',
-        'TRK': 'Turkish',
-        'UKR': 'Ukrainian',
-        'VIN': 'Vietnamese',
-        'CNR': 'Montenegrin',
-        'SRP': 'Serbian',
-        'HRV': 'Croatian',
-        'ARA': 'Arabic',
-        'THA': 'Thai',
-        'IND': 'Indonesian'
-    }
+    _LANGUAGE_CODE_MAP=VALID_LANGUAGES
+
     _INVALID_REPEAT_COUNT = 2  # 如果检测到“无效”翻译，最多重复 2 次
     _MAX_REQUESTS_PER_MINUTE = 40  # 每分钟最大请求次数
     _TIMEOUT = 40  # 在重试之前等待服务器响应的时间（秒）
@@ -55,9 +30,6 @@ class OllamaTranslator(ConfigGPT, CommonTranslator):
 
     # 是否返回原始提示，用于控制输出内容
     _RETURN_PROMPT = False
-
-    # 是否包含模板，用于决定是否使用预设的提示模板
-    _INCLUDE_TEMPLATE = False
     
     def __init__(self, check_openai_key=False):
         # If the user has specified a nested key to use for the model, append the key
@@ -78,28 +50,10 @@ class OllamaTranslator(ConfigGPT, CommonTranslator):
         self.config = args.chatgpt_config
 
 
-    def extract_capture_groups(self, text, regex=r"(.*)"):
-        """
-        Extracts all capture groups from matches and concatenates them into a single string.
-        
-        :param text: The multi-line text to search.
-        :param regex: The regex pattern with capture groups.
-        :return: A concatenated string of all matched groups.
-        """
-        pattern = re.compile(regex, re.DOTALL)  # DOTALL to match across multiple lines
-        matches = pattern.findall(text)  # Find all matches
-        
-        # Ensure matches are concatonated (handles multiple groups per match)
-        extracted_text = "\n".join(
-            "\n".join(m) if isinstance(m, tuple) else m for m in matches
-        )
-        
-        return extracted_text.strip() if extracted_text else None
-
     def _assemble_prompts(self, from_lang: str, to_lang: str, queries: List[str]):
         prompt = ''
 
-        if self._INCLUDE_TEMPLATE:
+        if self.include_template:
             prompt += self.prompt_template.format(to_lang=to_lang)
 
         if self._RETURN_PROMPT:
@@ -242,15 +196,6 @@ class OllamaTranslator(ConfigGPT, CommonTranslator):
             {'role': 'assistant', 'content': self.chat_sample[to_lang][1]},
             {'role': 'user', 'content': prompt},
         ]
-
-        def strip_first_line(txt: str) :
-            # find <1>
-            loc = txt.find('<|1|>')
-            if loc == -1:
-                return txt
-            txt = txt[loc:]
-            return txt
-
 
         # self.logger.debug('-- Completion Request --\n')
                     
