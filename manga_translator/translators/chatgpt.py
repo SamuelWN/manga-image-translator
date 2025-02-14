@@ -1,6 +1,7 @@
 import re
 import asyncio
 import time
+import json
 import logging
 from typing import List, Dict
 
@@ -46,7 +47,6 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
     _TIMEOUT = 40
     _RETRY_ATTEMPTS = 3
     _MAX_TOKENS = 8192
-
 
     def __init__(self, check_openai_key=True):
         _CONFIG_KEY = 'chatgpt.' + OPENAI_MODEL
@@ -123,7 +123,10 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
         for attempt in range(self._RETRY_ATTEMPTS):
             try:
                 response_text = await self._request_translation(to_lang, prompt[0])
-                translations = self._parse_response(response_text, queries)
+                if not self.json_mode:
+                    translations = self._parse_response(response_text, queries)
+                else:
+                    translations = self._parse_json_response(response_text, queries)
                 return translations
             except Exception as e:
                 self.logger.warning(f"Translation attempt {attempt+1} failed: {str(e)}")
@@ -173,15 +176,73 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
             translations[id_num - 1] = translation
         
         return translations
+        
+    def _parse_json_response(self, response: str, queries: List[str]) -> List[str]:
+        """
+        Parses a JSON response from the API and maps translations to their respective positions.
+
+        Args:
+            response (str): The JSON response from the API.
+            queries (List[str]): The original list of queries/input lines.
+
+        Returns:
+            List[str]: A list of translations in the same order as the input queries.
+                       If a translation is missing, the original query is preserved.
+        """
+        translations = queries.copy()  # Initialize with the original queries
+        expected_count = len(translations)
+
+        try:
+            # Parse the JSON response
+            response_data = json.loads(response)
+
+            # Validate the JSON structure
+            if not isinstance(response_data, dict) or "Translated" not in response_data:
+                raise ValueError("Invalid JSON structure: Missing 'Translated' key")
+
+            translated_items = response_data["Translated"]
+
+            # Validate that 'Translated' is a list
+            if not isinstance(translated_items, list):
+                raise ValueError("Invalid JSON structure: 'Translated' must be a list")
+
+            # Process each translated item
+            for item in translated_items:
+                # Validate item structure
+                if not isinstance(item, dict) or "ID" not in item or "text" not in item:
+                    raise ValueError("Invalid translation item: Missing 'ID' or 'text'")
+
+                # Extract and validate the ID format
+                id_str = item["ID"]
+                id_match = re.match(r'^(\d+)$', id_str)  # Match numeric IDs without <| |>
+                if not id_match:
+                    raise ValueError(f"Invalid ID format: {id_str} (expected numeric ID)")
+
+                id_num = int(id_match.group(1))
+                translation = item["text"].strip()
+
+                # Check if the ID is within the expected range
+                if id_num < 1 or id_num > expected_count:
+                    raise ValueError(f"ID {id_num} out of range (expected 1 to {expected_count})")
+
+                # Update the translation at the correct position
+                translations[id_num - 1] = translation
+
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse JSON response: {str(e)}") from e
+
+        return translations
+
 
     async def _request_translation(self, to_lang: str, prompt: str) -> str:
         messages = [{
             "role": "system",
             "content": self.chat_system_template.format(to_lang=to_lang)
-        }, 
-            {'role': 'user', 'content': self.chat_sample[to_lang][0]},
-            {'role': 'assistant', 'content': self.chat_sample[to_lang][1]},
-        {
+        },{
+            'role': 'user', 'content': self.chat_sample[to_lang][0]
+        },{
+            'role': 'assistant', 'content': self.chat_sample[to_lang][1]
+        },{
             "role": "user",
             "content": prompt
         }]
@@ -191,16 +252,32 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
                 "\n"
             )
 
+        # Arguments for the API call:
+        kwargs = {
+            "model": OPENAI_MODEL,
+            "messages": messages,
+            "max_tokens": self._MAX_TOKENS // 2,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "timeout": self._TIMEOUT
+        }
+
+        # If requesting JSON output:
+        if self.json_mode:
+            messages[1] =  {'role': 'user', 'content': self.json_sample[to_lang][0]}
+            messages[2] =  {'role': 'user', 'content': self.json_sample[to_lang][1]}
+            kwargs["messages"] = messages
+
+            kwargs["response_format"] =  self.json_schema
+
+
+        self.logger.debug("-- kwargs --")
+        self.logger.debug(kwargs)
+        self.logger.debug("------------")
+
         try:
-            response = await self.client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=messages,
-                max_tokens=self._MAX_TOKENS // 2,
-                temperature=self.temperature,
-                top_p=self.top_p,
-                timeout=self._TIMEOUT
-            )
-            
+            response = await self.client.chat.completions.create(**kwargs)
+
             self.logger.debug("\n-- GPT Response --\n" +
                                 response.choices[0].message.content +
                                 "\n------------------\n"

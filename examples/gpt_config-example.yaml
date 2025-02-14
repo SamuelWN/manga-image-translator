@@ -21,9 +21,14 @@ chat_system_template: >
   Translate to {to_lang}.
 
 
-chatgpt:
+chatgpt:  
   # Should the `Prompt Template` (defined below) text be prepended to the translation requests?
   include_template: True
+
+  # Asking ChatGPT to output as JSON seems to reduce translation refusal rates.
+  #   Enable if encountering frequent translation refusals.
+  json_mode: True
+
   # Overwrite configs for a specific model.
   gpt-4o-mini:
     temperature: 0.4
@@ -59,5 +64,37 @@ chat_sample:
       <|2|>きみ… 大丈夫⁉
       <|3|>なんだこいつ 空気読めて ないのか…？
     - <|1|>I'm embarrassed... I don't want to stand out... I want to disappear...
-      <|2|>Are you okay?
-      <|3|>What's wrong with this guy? Can't he read the situation...?
+      <|2|>Are you okay?!
+      <|3|>What the hell is this person? Can't they read the room...?
+
+# Sample input & output for when using `json_mode: True`.
+# In a [prompt, response] format, keyed by the target language name.
+#
+# Generally, samples should include some examples of translation preferences, and ideally
+# some names of characters it's likely to encounter.
+# 
+# NOTE: Formatting should not be altered.
+json_sample:
+  English: 
+    - >-
+      <|1|>恥ずかしい… 目立ちたくない… 私が消えたい…
+      <|2|>きみ… 大丈夫⁉
+      <|3|>なんだこいつ 空気読めて ないのか…？
+    - >-
+      {"Translated":[
+        {"ID":"1","text":"I'm embarrassed... I don't want to stand out... I want to disappear..."},
+        {"ID":"2","text":"Are you okay?!"},
+        {"ID":"3","text":"What the hell is this person? Can't they read the room...?"}
+      ]}
+  Simplified Chinese:
+    - >-
+      <|1|>恥ずかしい… 目立ちたくない… 私が消えたい…
+      <|2|>きみ… 大丈夫⁉
+      <|3|>なんだこいつ 空気読めて ないのか…？
+    - >-
+      {"Translated":[
+        {"ID":"1","text":"好尴尬…我不想引人注目…我想消失…"},
+        {"ID":"2","text":"你…没事吧⁉"},
+        {"ID":"3","text":"这家伙怎么看不懂气氛的…？"}
+      ]}
+

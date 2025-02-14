@@ -33,10 +33,43 @@ class ConfigGPT:
             ),
             (
                 "<|1|>I'm embarrassed... I don't want to stand out... I want to disappear...\n"
-                "<|2|>Are you okay?\n"
-                "<|3|>What's wrong with this guy? Can't he read the situation...?"
+                "<|2|>Are you okay?!\n"
+                "<|3|>What the hell is this person? Can't they read the room...?"
             )
         ]
+    }
+
+    _JSON_SAMPLE = {
+        'Simplified Chinese': [
+            (
+              '<|1|>恥ずかしい… 目立ちたくない… 私が消えたい…\n'
+              '<|2|>きみ… 大丈夫⁉\n'
+              '<|3|>なんだこいつ 空気読めて ないのか…？\n'
+            ),
+            (
+              '{"Translated":['
+                '{"ID":"1","text":"好尴尬…我不想引人注目…我想消失…"},\n'
+                '{"ID":"2","text":"你…没事吧⁉"},\n'
+                '{"ID":"3","text":"这家伙怎么看不懂气氛的…？"}\n'
+              ']}'
+            )
+        ],
+        'English': [
+            (
+              '<|1|>恥ずかしい… 目立ちたくない… 私が消えたい…\n'
+              '<|2|>きみ… 大丈夫⁉\n'
+              '<|3|>なんだこいつ 空気読めて ないのか…？\n'
+            ),
+            (
+              '{"Translated":['
+                """{"ID":"1","text":"I'm so embarrassed... I don't want to stand out... I just want to disappear..."},"""
+                """{"ID":"2","text":"Are you okay?!"},"""
+                """{"ID":"3","text":"What the hell is this person? Can't they read the room...?"}"""
+              ']}'
+            )
+        ]
+
+
     }
 
     _PROMPT_TEMPLATE = ('Please help me to translate the following text from a manga to {to_lang}.'
@@ -44,9 +77,41 @@ class ConfigGPT:
                         'you have to output it as it is instead. Keep prefix format.\n'
                     )
 
+    # JSON Scheme for output parsing
+    _JSON_SCHEMA = { 
+        "type": "json_schema",
+        "json_schema": {
+            "name": "translated",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "Translated": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "ID": {"type": "string"},
+                                "text": {"type": "string"}
+                            },
+                            "required": ["ID", "text"],
+                            "additionalProperties": False
+                        }
+                    }
+                },
+                "required": ["Translated"],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }
+
+
+
     # Extract text within the capture group that matches this pattern.
     # By default: Capture everything.
     _RGX_REMOVE='(.*)'
+
+    _JSON_MODE=False
 
     def __init__(self, config_key: str):
         # This key is used to locate nested configuration entries
@@ -88,8 +153,20 @@ class ConfigGPT:
         return self._config_get('chat_sample', self._CHAT_SAMPLE)
 
     @property
+    def json_sample(self) -> Dict[str, List[str]]:
+        return self._config_get('json_sample', self._JSON_SCHEMA)
+
+    @property
     def rgx_capture(self) -> str:
         return self._config_get('rgx_capture', self._RGX_REMOVE)
+
+    @property
+    def json_mode(self) -> str:
+        return self._config_get('json_mode', self._JSON_MODE)
+
+    @property
+    def json_schema(self) -> str:
+        return self._JSON_SCHEMA
 
     @property
     def temperature(self) -> float:
