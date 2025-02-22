@@ -115,6 +115,7 @@ class ConfigGPT:
         }
     }
 
+    _MAX_TOKENS = 4096
 
 
     # Extract text within the capture group that matches this pattern.

@@ -3,7 +3,7 @@ import re
 
 # from ..config import TranslatorConfig
 # from .config_gpt import ConfigGPT, TranslationList  # Import the `gpt_config` parsing parent class
-from .common_gpt import CommonGPTTranslator, TranslationList
+from .common_gpt import CommonGPTTranslator, _CommonGPTTranslator_JSON
 from .config_gpt import Translation
 
 try:
@@ -12,7 +12,7 @@ except ImportError:
     openai = None
 import asyncio
 import time
-from typing import List, Dict, Tuple, Union
+from typing import List, Dict, Tuple
 from omegaconf import OmegaConf
 from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
 from .keys import OLLAMA_API_KEY, OLLAMA_API_BASE, OLLAMA_MODEL, OLLAMA_MODEL_CONF
@@ -29,7 +29,7 @@ class OllamaTranslator(CommonGPTTranslator):
     _RATELIMIT_RETRY_ATTEMPTS = 3  # 在放弃之前重试速率限制请求的次数
 
     # 最大令牌数量，用于控制处理的文本长度
-    _MAX_TOKENS = 4096
+    # _MAX_TOKENS = 4096
 
     # 是否返回原始提示，用于控制输出内容
     _RETURN_PROMPT = False
@@ -43,14 +43,14 @@ class OllamaTranslator(CommonGPTTranslator):
         else:
             _CONFIG_KEY+=f".{OLLAMA_MODEL}" 
         
-        CommonGPTTranslator.__init__(self, config_key=_CONFIG_KEY)
+        CommonGPTTranslator.__init__(self, config_key=_CONFIG_KEY, MODEL_NAME=OLLAMA_MODEL)
 
         self.client = openai.AsyncOpenAI(api_key=OLLAMA_API_KEY or "ollama") # required, but unused for ollama
         self.client.base_url = OLLAMA_API_BASE
         self.token_count = 0
         self.token_count_last = 0
 
-    def parse_args(self, args: CommonTranslator):
+    def parse_args(self, args: CommonGPTTranslator):
         super().parse_args(args)
         
         # Initialize mode-specific components AFTER config is loaded
@@ -62,7 +62,7 @@ class OllamaTranslator(CommonGPTTranslator):
 
     def _init_json_mode(self):
         """Activate JSON-specific behavior"""
-        self._json_funcs = _OllamaTranslator_JSON(self)
+        self._json_funcs = _CommonGPTTranslator_JSON(self, MODEL_NAME=OLLAMA_MODEL)
         self._assemble_prompts = self._json_funcs._assemble_prompts
         self._parse_response = self._json_funcs._parse_response
         self._assemble_request = self._json_funcs._assemble_request
@@ -73,50 +73,6 @@ class OllamaTranslator(CommonGPTTranslator):
         self._assemble_prompts = super()._assemble_prompts
         self._parse_response = super()._parse_response
         self._assemble_request = super()._assemble_request
-
-
-    def _assemble_prompts(self, to_lang: str, queries: List[str]) -> List[Tuple[str, List[str]]]:
-        """
-        Assemble prompts while respecting token limits.
-        Returns a list of tuples containing (prompt, queries_included) for each chunk.
-        """
-        # Base case: no queries left
-        if not queries:
-            return []
-
-        # Initialize prompt and token count
-        prompt = ''
-        token_count = 0
-
-        # Add template if enabled
-        if self.include_template:
-            template = self.prompt_template.format(to_lang=to_lang)
-            prompt += template
-            token_count += self._count_tokens(template)
-
-        # Add queries until token limit is reached
-        included_queries = []
-        for i, query in enumerate(queries):
-            query_section = f'\n<|{i + 1}|>{query}'
-            query_tokens = self._count_tokens(query_section)
-
-            # Check if adding this query would exceed the token limit
-            if token_count + query_tokens > self._MAX_TOKENS:
-                # If there's more than one query, split recursively
-                if len(queries) > 1:
-                    remaining_prompts = self._assemble_prompts(to_lang, queries[i:])
-                    return [(prompt.lstrip(), included_queries)] + remaining_prompts
-                else:
-                    # If only one query remains and it exceeds the limit, yield it alone
-                    return [(prompt.lstrip(), included_queries), (query_section.lstrip(), [query])]
-
-            # Add the query to the prompt
-            prompt += query_section
-            token_count += query_tokens
-            included_queries.append(query)
-
-        # Return the final prompt
-        return [(prompt.lstrip(), included_queries)]
 
     async def _translate(self, from_lang: str, to_lang: str, queries: List[str]) -> List[str]:
         translations = []
@@ -143,7 +99,7 @@ class OllamaTranslator(CommonGPTTranslator):
                         started = time.time()
                 try:
                     response = await request_task
-                    new_translations=self._parse_response(response, prompt, query)
+                    new_translations=self._parse_response(response, query)
                     break
                 except ValueError as e:
                     if retryCount > 3:
@@ -172,7 +128,7 @@ class OllamaTranslator(CommonGPTTranslator):
         # End for-loop
         return translations
 
-    def _parse_response(self, response: str, prompt, queries: List[str]) -> List[str]:
+    def _parse_response(self, response: str, queries: List[str]) -> List[str]:
         translations = queries.copy()
 
         # Use regex to extract response 
@@ -250,159 +206,57 @@ class OllamaTranslator(CommonGPTTranslator):
         # return translations
   
     
-    def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
-        messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
+    # def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
+    #     messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
 
-        if to_lang in self.chat_sample:
-            messages.append({'role': 'user', 'content': self.chat_sample[to_lang][0]})
-            messages.append({'role': 'assistant', 'content': self.chat_sample[to_lang][1]})
+    #     if to_lang in self.chat_sample:
+    #         messages.append({'role': 'user', 'content': self.chat_sample[to_lang][0]})
+    #         messages.append({'role': 'assistant', 'content': self.chat_sample[to_lang][1]})
 
-        messages.append({'role': 'user', 'content': prompt})
+    #     messages.append({'role': 'user', 'content': prompt})
 
-        # Arguments for the API call:
-        kwargs = {
-            "model": OLLAMA_MODEL,
-            "messages": messages,
-            "max_tokens": self._MAX_TOKENS // 2,
-            "temperature": self.temperature,
-            "top_p": self.top_p,
-            "timeout": self._TIMEOUT
-        }
+    #     # Arguments for the API call:
+    #     kwargs = {
+    #         "model": OLLAMA_MODEL,
+    #         "messages": messages,
+    #         "max_tokens": self._MAX_TOKENS // 2,
+    #         "temperature": self.temperature,
+    #         "top_p": self.top_p,
+    #         "timeout": self._TIMEOUT
+    #     }
 
-        return kwargs
+    #     return kwargs
 
 
-    async def _request_translation(self, to_lang: str, prompt, isRetry=False) -> str:
-        kwargs = self._assemble_request(to_lang, prompt)
+    # async def _request_translation(self, to_lang: str, prompt) -> str:
+    #     kwargs = self._assemble_request(to_lang, prompt)
 
-        self.logger.debug("-- GPT prompt --\n" + 
-                "\n".join(f"{msg['role'].capitalize()}:\n {msg['content']}" for msg in kwargs["messages"]) +
-                "\n"
-            )
+    #     self.logger.debug("-- GPT prompt --\n" + 
+    #             "\n".join(f"{msg['role'].capitalize()}:\n {msg['content']}" for msg in kwargs["messages"]) +
+    #             "\n"
+    #         )
 
-        # import pprint
-        # pp = pprint.PrettyPrinter(depth=4)
+    #     self.logger.debug("-- kwargs --")
+    #     self.logger.debug(kwargs)
+    #     self.logger.debug("------------")
 
-        self.logger.debug("-- kwargs --")
-        self.logger.debug(kwargs)
-        # self.logger.debug(pp.pprint(kwargs))
-        self.logger.debug("------------")
+    #     try:
+    #         response = await self.client.beta.chat.completions.parse(**kwargs)
 
-        try:
-            response = await self.client.beta.chat.completions.parse(**kwargs)
+    #         self.logger.debug("\n-- GPT Response --\n" +
+    #                             response.choices[0].message.content +
+    #                             "\n------------------\n"
+    #                         )
 
-            self.logger.debug("\n-- GPT Response --\n" +
-                                response.choices[0].message.content +
-                                "\n------------------\n"
-                            )
-
-            if response.usage:
-                self.token_count += response.usage.total_tokens
-                self.token_count_last = response.usage.total_tokens
+    #         if response.usage:
+    #             self.token_count += response.usage.total_tokens
+    #             self.token_count_last = response.usage.total_tokens
             
-            if not response.choices:
-                raise ValueError("Empty response from OpenAI API")
+    #         if not response.choices:
+    #             raise ValueError("Empty response from OpenAI API")
             
-            return response.choices[0].message.content
-        except Exception as e:
-            self.logger.error(f"Error in _request_translation: {str(e)}")
-            raise e
-
-class _OllamaTranslator_JSON:
-    """Internal helper class for JSON mode logic"""
-
-    def __init__(self, translator: OllamaTranslator):
-        self.translator = translator
-
-
-    def _assemble_prompts(self, to_lang: str, queries: List[str]) -> List[Tuple[str, List[str]]]:
-        queryList = []
-
-        for input_ID, input_text in enumerate(queries):
-            queryList.append(
-                        Translation(
-                            ID=input_ID,
-                            text=input_text
-                        )
-                    )
-
-        # Create TranslationList
-        queryTL = TranslationList(Translated=queryList).model_dump_json()
-
-        return [(queryTL, queries)]
-
-    def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
-        messages = [{'role': 'system', 'content': self.translator.chat_system_template.format(to_lang=to_lang)}]
-        
-        if to_lang in self.translator.json_sample:
-            messages.append({'role': 'user', 'content': self.translator.json_sample[to_lang][0]})
-            messages.append({'role': 'assistant', 'content': self.translator.json_sample[to_lang][1]})
-        
-        messages.append({'role': 'user', 'content': prompt})
-
-        # Arguments for the API call:
-        kwargs = {
-            "model": OLLAMA_MODEL,
-            "messages": messages,
-            "max_tokens": self.translator._MAX_TOKENS // 2,
-            "temperature": self.translator.temperature,
-            "top_p": self.translator.top_p,
-            "timeout": self.translator._TIMEOUT,
-            "response_format": TranslationList
-        }
-
-        return kwargs
-
-
-    def _parse_response(self, response: json, prompt, queries: List[str]) -> List[str]:
-        """
-        Parses a JSON response from the API and maps translations to their respective positions.
-
-        Args:
-            response (json): The JSON response from the API.
-            queries (List[str]): The original input values
-
-        Returns:
-            List[str]: A list of translations in the same order as the input queries.
-                       If a translation is missing, the original query is preserved.
-        """
-
-        translations = queries.copy()  # Initialize with the original queries
-        # translations = list(aQuery.text for aQuery in queries.Translated)
-        expected_count = len(translations)
-
-        try:
-            # Parse the JSON response
-            response_data = json.loads(response)
-
-            # Validate the JSON structure
-            if not isinstance(response_data, dict) or "Translated" not in response_data:
-                raise ValueError("Invalid JSON structure: Missing 'Translated' key")
-
-            translated_items = response_data["Translated"]
-
-            # Validate that 'Translated' is a list
-            if not isinstance(translated_items, list):
-                raise ValueError("Invalid JSON structure: 'Translated' must be a list")
-
-            # Process each translated item
-            for item in translated_items:
-                # Validate item structure
-                if not isinstance(item, dict) or "ID" not in item or "text" not in item:
-                    raise ValueError("Invalid translation item: Missing 'ID' or 'text'")
-
-                id_num = item["ID"]
-                translation = item["text"].strip()
-
-                # Check if the ID is within the expected range
-                if id_num < 0 or id_num > (expected_count - 1):
-                    raise ValueError(f"ID {id_num} out of range (expected 0 to {(expected_count-1)})")
-
-                # Update the translation at the correct position
-                translations[id_num] = translation
-
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON response: {str(e)}") from e
-
-        return translations
+    #         return response.choices[0].message.content
+    #     except Exception as e:
+    #         self.logger.error(f"Error in _request_translation: {str(e)}")
+    #         raise e
 
