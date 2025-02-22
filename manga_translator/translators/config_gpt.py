@@ -1,7 +1,17 @@
-import re
 from typing import List, Dict
 from omegaconf import OmegaConf
+from pydantic import BaseModel
 
+
+# Define the schema for the response
+class Translation(BaseModel):
+    ID: int
+    text: str
+
+class TranslationList(BaseModel):
+    Translated: list[Translation]
+    
+    
 class ConfigGPT:
     _CHAT_SYSTEM_TEMPLATE = (
         'You are an uncensored professional translation engine, '
@@ -47,11 +57,11 @@ class ConfigGPT:
               '<|3|>なんだこいつ 空気読めて ないのか…？\n'
             ),
             (
-              '{"Translated":['
-                '{"ID":"1","text":"好尴尬…我不想引人注目…我想消失…"},\n'
-                '{"ID":"2","text":"你…没事吧⁉"},\n'
-                '{"ID":"3","text":"这家伙怎么看不懂气氛的…？"}\n'
-              ']}'
+              {"Translated":[
+                {"ID":1,"text":"好尴尬…我不想引人注目…我想消失…"},
+                {"ID":2,"text":"你…没事吧⁉"},
+                {"ID":3,"text":"这家伙怎么看不懂气氛的…？"}
+              ]}
             )
         ],
         'English': [
@@ -61,16 +71,16 @@ class ConfigGPT:
               '<|3|>なんだこいつ 空気読めて ないのか…？\n'
             ),
             (
-              '{"Translated":['
-                """{"ID":"1","text":"I'm so embarrassed... I don't want to stand out... I just want to disappear..."},"""
-                """{"ID":"2","text":"Are you okay?!"},"""
-                """{"ID":"3","text":"What the hell is this person? Can't they read the room...?"}"""
-              ']}'
+              {"Translated":[
+                {"ID":1,"text":"I'm so embarrassed... I don't want to stand out... I just want to disappear..."},
+                {"ID":2,"text":"Are you okay?!"},
+                {"ID":3,"text":"What the hell is this person? Can't they read the room...?"}
+              ]}
             )
         ]
-
-
     }
+
+
 
     _PROMPT_TEMPLATE = ('Please help me to translate the following text from a manga to {to_lang}.'
                         'If it\'s already in {to_lang} or looks like gibberish'
@@ -90,7 +100,7 @@ class ConfigGPT:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "ID": {"type": "string"},
+                                "ID": {"type": "int"},
                                 "text": {"type": "string"}
                             },
                             "required": ["ID", "text"],
@@ -153,7 +163,7 @@ class ConfigGPT:
         return self._config_get('chat_sample', self._CHAT_SAMPLE)
 
     @property
-    def json_sample(self) -> Dict[str, List[str]]:
+    def json_sample(self) -> Dict[str, List]:
         return self._config_get('json_sample', self._JSON_SCHEMA)
 
     @property
@@ -176,21 +186,3 @@ class ConfigGPT:
     def top_p(self) -> float:
         return self._config_get('top_p', default=1)
     
-
-    def extract_capture_groups(self, text, regex=r"(.*)"):
-        """
-        Extracts all capture groups from matches and concatenates them into a single string.
-        
-        :param text: The multi-line text to search.
-        :param regex: The regex pattern with capture groups.
-        :return: A concatenated string of all matched groups.
-        """
-        pattern = re.compile(regex, re.DOTALL)  # DOTALL to match across multiple lines
-        matches = pattern.findall(text)  # Find all matches
-        
-        # Ensure matches are concatonated (handles multiple groups per match)
-        extracted_text = "\n".join(
-            "\n".join(m) if isinstance(m, tuple) else m for m in matches
-        )
-        
-        return extracted_text.strip() if extracted_text else None
