@@ -1,11 +1,10 @@
 import re
 import asyncio
 import time
-import json
+import tiktoken
 
-from typing import List, Dict, Tuple
-from .config_gpt import ConfigGPT, TranslationList
-from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
+from typing import List
+from .common import MissingAPIKeyException, VALID_LANGUAGES
 from .keys import OPENAI_API_KEY, OPENAI_HTTP_PROXY, OPENAI_API_BASE, OPENAI_MODEL
 from .common_gpt import CommonGPTTranslator, _CommonGPTTranslator_JSON
 
@@ -23,10 +22,6 @@ class OpenAITranslator(CommonGPTTranslator):
     def __init__(self, check_openai_key=True):
         _CONFIG_KEY = 'chatgpt.' + OPENAI_MODEL
         CommonGPTTranslator.__init__(self, config_key=_CONFIG_KEY, MODEL_NAME=OPENAI_MODEL)
-        # ConfigGPT.__init__(self, config_key=_CONFIG_KEY)
-        # CommonTranslator.__init__(self)
-        # super().__init__(config_key=_CONFIG_KEY)
-        
 
         if not OPENAI_API_KEY and check_openai_key:
             raise MissingAPIKeyException('OPENAI_API_KEY environment variable required')
@@ -41,7 +36,6 @@ class OpenAITranslator(CommonGPTTranslator):
             client_args["http_client"] = AsyncClient(proxies={
                 "all://*openai.com": f"http://{OPENAI_HTTP_PROXY}"
             })
-
 
         self.client = openai.AsyncOpenAI(**client_args)
         self._MAX_TOKENS = 8192
@@ -60,7 +54,7 @@ class OpenAITranslator(CommonGPTTranslator):
 
     def _init_json_mode(self):
         """Activate JSON-specific behavior"""
-        self._json_funcs = _CommonGPTTranslator_JSON(self, MODEL_NAME=OPENAI_MODEL)
+        self._json_funcs = _CommonGPTTranslator_JSON(self)
         self._assemble_prompts = self._json_funcs._assemble_prompts
         self._parse_response = self._json_funcs._parse_response
         self._assemble_request = self._json_funcs._assemble_request
@@ -77,9 +71,6 @@ class OpenAITranslator(CommonGPTTranslator):
         """Determine the encoding name for the OpenAI model."""
         self.logger.debug("OPENAI_MODEL: ")
         self.logger.debug(OPENAI_MODEL)
-        self.logger.debug(type(OPENAI_MODEL))
-
-        import tiktoken
 
         try:
             # Use tiktoken's built-in mapping for OpenAI models
@@ -91,12 +82,14 @@ class OpenAITranslator(CommonGPTTranslator):
     def _count_tokens(self, text: str) -> int:
         """Count tokens for OpenAI models."""
         encoding_name = self._get_encoding_for_model()
+        self.logger.debug("encoding_name: ")
+        self.logger.debug(encoding_name)
         return self.count_tokens(text, encoding_name)
 
     async def _translate(self, from_lang: str, to_lang: str, queries: List[str]) -> List[str]:
         translations = []
         
-        for prompt, query in self._assemble_prompts(to_lang, queries):
+        for prompt, query in self._assemble_prompts(to_lang, queries, encoding=self._get_encoding_for_model()):
             for attempt in range(self._RETRY_ATTEMPTS):
                 try:
                     response_text = await self._request_translation(to_lang, prompt)

@@ -1,10 +1,12 @@
 import json
 import re
 
+import tiktoken
+
 # from ..config import TranslatorConfig
 # from .config_gpt import ConfigGPT, TranslationList  # Import the `gpt_config` parsing parent class
 from .common_gpt import CommonGPTTranslator, _CommonGPTTranslator_JSON
-from .config_gpt import Translation
+# from .config_gpt import Translation
 
 try:
     import openai
@@ -12,24 +14,20 @@ except ImportError:
     openai = None
 import asyncio
 import time
-from typing import List, Dict, Tuple
-from omegaconf import OmegaConf
-from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
+from typing import List, Dict, Optional
+from urllib.parse import urlparse, urlunparse
+# from omegaconf import OmegaConf
+# from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
 from .keys import OLLAMA_API_KEY, OLLAMA_API_BASE, OLLAMA_MODEL, OLLAMA_MODEL_CONF
 
 
 class OllamaTranslator(CommonGPTTranslator):
-    _LANGUAGE_CODE_MAP=VALID_LANGUAGES
-
     _INVALID_REPEAT_COUNT = 2  # 如果检测到“无效”翻译，最多重复 2 次
     _MAX_REQUESTS_PER_MINUTE = 40  # 每分钟最大请求次数
     _TIMEOUT = 40  # 在重试之前等待服务器响应的时间（秒）
     _RETRY_ATTEMPTS = 3  # 在放弃之前重试错误请求的次数
     _TIMEOUT_RETRY_ATTEMPTS = 3  # 在放弃之前重试超时请求的次数
     _RATELIMIT_RETRY_ATTEMPTS = 3  # 在放弃之前重试速率限制请求的次数
-
-    # 最大令牌数量，用于控制处理的文本长度
-    # _MAX_TOKENS = 4096
 
     # 是否返回原始提示，用于控制输出内容
     _RETURN_PROMPT = False
@@ -43,8 +41,13 @@ class OllamaTranslator(CommonGPTTranslator):
         else:
             _CONFIG_KEY+=f".{OLLAMA_MODEL}" 
         
+        
         CommonGPTTranslator.__init__(self, config_key=_CONFIG_KEY, MODEL_NAME=OLLAMA_MODEL)
-
+        self._ollama_model_details: Optional[dict] = None
+        self.model_name = OLLAMA_MODEL
+        self.openai_api_base = OLLAMA_API_BASE  # e.g., "http://localhost:11434/v1"
+        self._derive_native_api_base()
+        
         self.client = openai.AsyncOpenAI(api_key=OLLAMA_API_KEY or "ollama") # required, but unused for ollama
         self.client.base_url = OLLAMA_API_BASE
         self.token_count = 0
@@ -59,10 +62,9 @@ class OllamaTranslator(CommonGPTTranslator):
         else:
             self._init_standard_mode()
 
-
     def _init_json_mode(self):
         """Activate JSON-specific behavior"""
-        self._json_funcs = _CommonGPTTranslator_JSON(self, MODEL_NAME=OLLAMA_MODEL)
+        self._json_funcs = _CommonGPTTranslator_JSON(self)
         self._assemble_prompts = self._json_funcs._assemble_prompts
         self._parse_response = self._json_funcs._parse_response
         self._assemble_request = self._json_funcs._assemble_request
@@ -74,11 +76,63 @@ class OllamaTranslator(CommonGPTTranslator):
         self._parse_response = super()._parse_response
         self._assemble_request = super()._assemble_request
 
+    def _derive_native_api_base(self):
+        """Convert OpenAI-compatible URL to native API base URL"""
+        parsed = urlparse(self.openai_api_base)
+        
+        # Strip /v1 from path
+        new_path = re.sub(r'/v1/?$', '', parsed.path)
+        if not new_path:
+            new_path = '/'
+            
+        self.native_api_base = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            new_path,
+            '', '', ''
+        ))
+
+
+    async def _get_ollama_model_details(self):
+        """Fetch Ollama model details to determine tokenizer."""
+        if not self._ollama_model_details:
+            try:
+                import httpx
+                async with httpx.AsyncClient(base_url=self.native_api_base) as client:
+                    response = await client.post(
+                        "/api/show",
+                        json={"model": self.model_name},
+                        timeout=10
+                    )
+                    self._ollama_model_details = response.json()
+            except Exception as e:
+                print(f"Couldn't fetch Ollama model details: {e}")
+                self._ollama_model_details = {}
+        return self._ollama_model_details
+
+    async def _get_encoding_for_model(self) -> str:
+        """Determine the encoding name for the Ollama model."""
+        
+        await self._get_ollama_model_details()  # Ensure model details are fetched
+      
+        details = self._ollama_model_details or {}
+        tokenizer_info = details.get("model_info", {}).get("tokenizer.ggml.model", "")
+        preprocessor = details.get("model_info", {}).get("tokenizer.ggml.pre", "")
+
+        if "gpt2" in tokenizer_info.lower():
+            return "gpt2"
+        elif "llama" in preprocessor.lower() or "qwen" in preprocessor.lower():
+            return "cl100k_base"
+        else:
+            return "cl100k_base"  # Default for unknown Ollama models
+
     async def _translate(self, from_lang: str, to_lang: str, queries: List[str]) -> List[str]:
         translations = []
         self.logger.debug(f'Temperature: {self.temperature}, TopP: {self.top_p}')
 
-        for prompt, query in self._assemble_prompts(to_lang, queries):
+        encoding_name = await self._get_encoding_for_model()
+        self.logger.debug(f'Encoding: {encoding_name}')
+        for prompt, query in self._assemble_prompts(to_lang, queries, encoding=encoding_name):
             ratelimit_attempt = 0
             server_error_attempt = 0
             timeout_attempt = 0
@@ -127,136 +181,3 @@ class OllamaTranslator(CommonGPTTranslator):
 
         # End for-loop
         return translations
-
-    def _parse_response(self, response: str, queries: List[str]) -> List[str]:
-        translations = queries.copy()
-
-        # Use regex to extract response 
-        response=self.extract_capture_groups(response, rf"{self.rgx_capture}")
-
-        # Testing suggests ChatGPT refusals are all-or-nothing. 
-        #   If partial responses do occur, this should may benefit from revising.
-        if self._cannot_assist(response):
-            self.logger.error(f'Refusal message detected in response. Skipping.')  
-            return translations
-
-        # Sometimes it will return line like "<|9>demo", and we need to fix it.
-        def add_pipe(match):
-            number = match.group(1)
-            return f"<|{number}|>"
-        response = re.sub(r"<\|?(\d+)\|?>", add_pipe, response)
-        
-
-        expected_count=len(translations)
-
-        # Use translation ID to position value in list `translations`
-        #   Parse output to grab translation ID
-        #   Use translation ID to position in a list
-
-        # Use regex to extract response 
-        response=self.extract_capture_groups(response, rf"{self.rgx_capture}")
-
-        # Extract IDs and translations from the response
-        translation_matches = list(re.finditer(r'<\|(\d+)\|>(.*?)(?=(<\|\d+\|>|$))', 
-                                    response, re.DOTALL)
-                                )
-
-        # Insert translations into their respective positions based on IDs:
-        for match in translation_matches:
-            id_num = int(match.group(1))
-            translation = match.group(2).strip()
-            
-            # Ensure the ID is within the expected range
-            if id_num < 1 or id_num > expected_count:
-                raise ValueError(f"ID {id_num} in response is out of range (expected 1 to {expected_count})")
-            
-            # Insert the translation at the correct position
-            translations[id_num - 1] = translation
-        
-        if self.token_count_last:
-            self.logger.info(f'Used {self.token_count_last} tokens (Total: {self.token_count})')
-        
-        return translations
-
-        # # self.logger.debug('-- GPT Response (filtered) --\n' + response)
-
-        # # @NOTE: This should *should* be superflous now, due to `extract_capture_groups`:
-        # # 
-        # # Remove any text preceeding the first translation.
-        # new_translations = re.split(r'<\|\d+\|>', 'pre_1\n' + response)[1:]
-        # # new_translations = re.split(r'<\|\d+\|>', response)
-
-        # # When there is only one query LLMs likes to exclude the <|1|>
-        # if not new_translations[0].strip():
-        #     new_translations = new_translations[1:]
-
-        # if len(new_translations) <= 1 and query_size > 1:
-        #     # Try splitting by newlines instead
-        #     new_translations = re.split(r'\n', response)
-
-        # if len(new_translations) > query_size:
-        #     new_translations = new_translations[: query_size]
-        # elif len(new_translations) < query_size:
-        #     new_translations = new_translations + [''] * (query_size - len(new_translations))
-
-        # return [t.strip() for t in new_translations]
-
-        # self.logger.debug(translations)
-
-        # return translations
-  
-    
-    # def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
-    #     messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
-
-    #     if to_lang in self.chat_sample:
-    #         messages.append({'role': 'user', 'content': self.chat_sample[to_lang][0]})
-    #         messages.append({'role': 'assistant', 'content': self.chat_sample[to_lang][1]})
-
-    #     messages.append({'role': 'user', 'content': prompt})
-
-    #     # Arguments for the API call:
-    #     kwargs = {
-    #         "model": OLLAMA_MODEL,
-    #         "messages": messages,
-    #         "max_tokens": self._MAX_TOKENS // 2,
-    #         "temperature": self.temperature,
-    #         "top_p": self.top_p,
-    #         "timeout": self._TIMEOUT
-    #     }
-
-    #     return kwargs
-
-
-    # async def _request_translation(self, to_lang: str, prompt) -> str:
-    #     kwargs = self._assemble_request(to_lang, prompt)
-
-    #     self.logger.debug("-- GPT prompt --\n" + 
-    #             "\n".join(f"{msg['role'].capitalize()}:\n {msg['content']}" for msg in kwargs["messages"]) +
-    #             "\n"
-    #         )
-
-    #     self.logger.debug("-- kwargs --")
-    #     self.logger.debug(kwargs)
-    #     self.logger.debug("------------")
-
-    #     try:
-    #         response = await self.client.beta.chat.completions.parse(**kwargs)
-
-    #         self.logger.debug("\n-- GPT Response --\n" +
-    #                             response.choices[0].message.content +
-    #                             "\n------------------\n"
-    #                         )
-
-    #         if response.usage:
-    #             self.token_count += response.usage.total_tokens
-    #             self.token_count_last = response.usage.total_tokens
-            
-    #         if not response.choices:
-    #             raise ValueError("Empty response from OpenAI API")
-            
-    #         return response.choices[0].message.content
-    #     except Exception as e:
-    #         self.logger.error(f"Error in _request_translation: {str(e)}")
-    #         raise e
-
