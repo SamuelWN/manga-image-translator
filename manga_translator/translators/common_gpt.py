@@ -278,16 +278,20 @@ class _CommonGPTTranslator_JSON:
     def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
         messages = [{'role': 'system', 'content': self.translator.chat_system_template.format(to_lang=to_lang)}]
         
-        if to_lang in self.translator.json_sample:
-            messages.append({'role': 'user', 'content': self.translator.json_sample[to_lang][0]})
-            messages.append({'role': 'assistant', 'content': self.translator.json_sample[to_lang][1]})
+        jSample=self.translator.json_sample
+        if to_lang in jSample:
+            messages.append({'role': 'user', 'content': jSample[to_lang][0].model_dump_json()})
+            messages.append({'role': 'assistant', 'content': jSample[to_lang][1].model_dump_json()})
         elif to_lang in self.translator.chat_sample:
-            # If no appropriate `json_sample` is available, but a `chat_sample is found: 
-            #   Convert and use the `chat_sample
-            asJSON = self.translator.convert_chat_to_json(self.translator.chat_sample)
+            # If no appropriate `json_sample` is available, but a `chat_sample` is found: 
+            #   Convert and use the `chat_sample`
+            asJSON = [
+                self.text2json(self.translator.chat_sample[to_lang][0]).model_dump_json(),
+                self.text2json(self.translator.chat_sample[to_lang][1]).model_dump_json()
+            ]
 
-            messages.append({'role': 'user', 'content': asJSON[to_lang][0]})
-            messages.append({'role': 'assistant', 'content': asJSON[to_lang][1]})
+            messages.append({'role': 'user', 'content': asJSON[0]})
+            messages.append({'role': 'assistant', 'content': asJSON[1]})
 
 
         messages.append({'role': 'user', 'content': prompt})
@@ -356,33 +360,29 @@ class _CommonGPTTranslator_JSON:
             raise ValueError(f"Failed to parse JSON response: {str(e)}") from e
 
         return translations
-
-    # def convert_chat_to_json(input_data: Dict[str, List[str]]) -> Dict[str, List[str]]:
-    def convert_chat_to_json(input_data: Dict[str, List[str]]) -> Dict[str, List[TranslationList]]:
+ 
+    def text2json(text: str) -> TranslationList:
         """
-        Convert text samples to JSON format using Pydantic models.
+        Convert text samples to TranslationList format.
+        Assists with backwards compatiblity for `<|ID|>`-based samples.
         
         Args:
-            input_data: Dictionary with language keys and list of text samples
+            input_data: Text samples, keyed by `<|ID|>` tags
             
         Returns:
-            Dictionary with language keys and a TranslationList values
+            Text samples stored as a TranslationList
         """
+
         segment_pattern = re.compile(r'<\|(\d+)\|>(.*?)(?=<\|(\d+)\|>|$)', re.DOTALL)
-        result = {}
+        segments = segment_pattern.findall(text)
 
-        for lang, textSamples in input_data.items():
-            if textSamples:
-                result[lang]=[]
-                for text in textSamples:
-                    segments = segment_pattern.findall(text)
+        jsonified=TranslationList(
+                            TextList=[
+                                TextValue(
+                                    ID=int(seg[0]),
+                                    text=seg[1].strip()
+                                ) for seg in segments
+                            ]
+                        )
 
-                    result[lang].append(TranslationList(
-                                        TextList=[
-                                            TextValue(ID=int(seg[0]), text=seg[1].strip())
-                                            for seg in segments
-                                        ]
-                                    )
-                    )
-
-        return result
+        return jsonified

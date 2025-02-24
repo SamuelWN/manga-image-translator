@@ -4,7 +4,7 @@ import time
 import tiktoken
 
 from typing import List
-from .common import MissingAPIKeyException, VALID_LANGUAGES
+from .common import MissingAPIKeyException
 from .keys import OPENAI_API_KEY, OPENAI_HTTP_PROXY, OPENAI_API_BASE, OPENAI_MODEL
 from .common_gpt import CommonGPTTranslator, _CommonGPTTranslator_JSON
 
@@ -14,7 +14,6 @@ except ImportError:
     openai = None
 
 class OpenAITranslator(CommonGPTTranslator):
-    _LANGUAGE_CODE_MAP = VALID_LANGUAGES
     _MAX_REQUESTS_PER_MINUTE = 200
     _TIMEOUT = 40
     _RETRY_ATTEMPTS = 3
@@ -65,7 +64,6 @@ class OpenAITranslator(CommonGPTTranslator):
         self._assemble_prompts = super()._assemble_prompts
         self._parse_response = super()._parse_response
         self._assemble_request = super()._assemble_request
-
 
     def _get_encoding_for_model(self) -> str:
         """Determine the encoding name for the OpenAI model."""
@@ -144,27 +142,6 @@ class OpenAITranslator(CommonGPTTranslator):
         
         return translations
         
-    # def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
-    #     messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
-
-    #     if to_lang in self.chat_sample:
-    #         messages.append({'role': 'user', 'content': self.chat_sample[to_lang][0]})
-    #         messages.append({'role': 'assistant', 'content': self.chat_sample[to_lang][1]})
-
-    #     messages.append({'role': 'user', 'content': prompt})
-
-    #     # Arguments for the API call:
-    #     kwargs = {
-    #         "model": OPENAI_MODEL,
-    #         "messages": messages,
-    #         "max_tokens": self._MAX_TOKENS // 2,
-    #         "temperature": self.temperature,
-    #         "top_p": self.top_p,
-    #         "timeout": self._TIMEOUT
-    #     }
-
-    #     return kwargs
-
     async def _ratelimit_sleep(self):
         if self._MAX_REQUESTS_PER_MINUTE > 0:
             now = time.time()

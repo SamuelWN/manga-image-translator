@@ -1,12 +1,6 @@
-import json
 import re
 
-import tiktoken
-
-# from ..config import TranslatorConfig
-# from .config_gpt import ConfigGPT, TranslationList  # Import the `gpt_config` parsing parent class
 from .common_gpt import CommonGPTTranslator, _CommonGPTTranslator_JSON
-# from .config_gpt import Translation
 
 try:
     import openai
@@ -14,10 +8,8 @@ except ImportError:
     openai = None
 import asyncio
 import time
-from typing import List, Dict, Optional
+from typing import List, Optional
 from urllib.parse import urlparse, urlunparse
-# from omegaconf import OmegaConf
-# from .common import CommonTranslator, MissingAPIKeyException, VALID_LANGUAGES
 from .keys import OLLAMA_API_KEY, OLLAMA_API_BASE, OLLAMA_MODEL, OLLAMA_MODEL_CONF
 
 
@@ -91,7 +83,6 @@ class OllamaTranslator(CommonGPTTranslator):
             new_path,
             '', '', ''
         ))
-
 
     async def _get_ollama_model_details(self):
         """Fetch Ollama model details to determine tokenizer."""

@@ -103,6 +103,8 @@ class ConfigGPT:
         # This key is used to locate nested configuration entries
         self._CONFIG_KEY = config_key
         self.config = None
+        
+        self._json_sample = None # Cache for parsed JSON samples
 
     def _config_get(self, key: str, default=None):
         if not self.config:
@@ -145,6 +147,9 @@ class ConfigGPT:
 
     @property
     def json_sample(self) -> Dict[str, List[TranslationList]]:
+        if self._json_sample:
+            return self._json_sample
+        
         # Try to get sample from config file:
         raw_samples = self._config_get('json_sample', None)
         
@@ -152,13 +157,15 @@ class ConfigGPT:
         if raw_samples is None:
             return self._JSON_SAMPLE
         
+        self._json_sample={}
+        
         # Convert OmegaConf structures to Python primitives
         if OmegaConf.is_config(raw_samples):
             raw_samples = OmegaConf.to_container(raw_samples, resolve=True)
         
-        processed = {}
+        _json_sample = {}
         for lang, samples in raw_samples.items():
-            processed[lang] = [
+            self._json_sample[lang] = [
                 TranslationList(
                     TextList=[
                         TextValue(ID=item['ID'], text=item['text'])
@@ -168,7 +175,7 @@ class ConfigGPT:
                 for aSample in samples
             ]
         
-        return processed
+        return self._json_sample
     
     @property
     def rgx_capture(self) -> str:
