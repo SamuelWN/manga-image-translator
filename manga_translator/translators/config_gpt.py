@@ -1,15 +1,16 @@
+import json
 from typing import List, Dict
 from omegaconf import OmegaConf
 from pydantic import BaseModel
 
 
 # Define the schema for the response
-class Translation(BaseModel):
+class TextValue(BaseModel):
     ID: int
     text: str
 
 class TranslationList(BaseModel):
-    Translated: list[Translation]
+    TextList: list[TextValue]
     
     
 class ConfigGPT:
@@ -42,7 +43,7 @@ class ConfigGPT:
                 '<|3|>なんだこいつ 空気読めて ないのか…？'
             ),
             (
-                "<|1|>I'm embarrassed... I don't want to stand out... I want to disappear...\n"
+                "<|1|>I'm so embarrassed... I don't want to stand out... I want to disappear...\n"
                 "<|2|>Are you okay?!\n"
                 "<|3|>What the hell is this person? Can't they read the room...?"
             )
@@ -51,70 +52,44 @@ class ConfigGPT:
 
     _JSON_SAMPLE = {
         'Simplified Chinese': [
-            (
-              '<|1|>恥ずかしい… 目立ちたくない… 私が消えたい…\n'
-              '<|2|>きみ… 大丈夫⁉\n'
-              '<|3|>なんだこいつ 空気読めて ないのか…？\n'
+            TranslationList(
+                TextList=[
+                    TextValue(ID=1,text="恥ずかしい… 目立ちたくない… 私が消えたい…"),
+                    TextValue(ID=2,text="きみ… 大丈夫⁉"),
+                    TextValue(ID=3,text="なんだこいつ 空気読めて ないのか…？")
+                ]
             ),
-            (
-              {"Translated":[
-                {"ID":1,"text":"好尴尬…我不想引人注目…我想消失…"},
-                {"ID":2,"text":"你…没事吧⁉"},
-                {"ID":3,"text":"这家伙怎么看不懂气氛的…？"}
-              ]}
+            TranslationList(
+                TextList=[
+                    TextValue(ID=1,text="好尴尬…我不想引人注目…我想消失…"),
+                    TextValue(ID=2,text="你…没事吧⁉"),
+                    TextValue(ID=3,text="这家伙怎么看不懂气氛的…？")
+                ]
             )
         ],
         'English': [
-            (
-              '<|1|>恥ずかしい… 目立ちたくない… 私が消えたい…\n'
-              '<|2|>きみ… 大丈夫⁉\n'
-              '<|3|>なんだこいつ 空気読めて ないのか…？\n'
+            TranslationList(
+                TextList=[
+                    TextValue(ID=1,text="恥ずかしい… 目立ちたくない… 私が消えたい…"),
+                    TextValue(ID=2,text="きみ… 大丈夫⁉"),
+                    TextValue(ID=3,text="なんだこいつ 空気読めて ないのか…？")
+                ]
             ),
-            (
-              {"Translated":[
-                {"ID":1,"text":"I'm so embarrassed... I don't want to stand out... I just want to disappear..."},
-                {"ID":2,"text":"Are you okay?!"},
-                {"ID":3,"text":"What the hell is this person? Can't they read the room...?"}
-              ]}
+            TranslationList(
+                TextList=[
+                    TextValue(ID=1,text="I'm so embarrassed... I don't want to stand out... I want to disappear..."),
+                    TextValue(ID=2,text="Are you okay?!"),
+                    TextValue(ID=3,text="What the hell is this person? Can't they read the room...?")
+                ]
             )
         ]
     }
-
-
 
     _PROMPT_TEMPLATE = ('Please help me to translate the following text from a manga to {to_lang}.'
                         'If it\'s already in {to_lang} or looks like gibberish'
                         'you have to output it as it is instead. Keep prefix format.\n'
                     )
-
-    # JSON Scheme for output parsing
-    _JSON_SCHEMA = { 
-        "type": "json_schema",
-        "json_schema": {
-            "name": "translated",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "Translated": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "ID": {"type": "int"},
-                                "text": {"type": "string"}
-                            },
-                            "required": ["ID", "text"],
-                            "additionalProperties": False
-                        }
-                    }
-                },
-                "required": ["Translated"],
-                "additionalProperties": False
-            },
-            "strict": True
-        }
-    }
-
+    
     _MAX_TOKENS = 4096
 
 
@@ -124,7 +99,7 @@ class ConfigGPT:
 
     _JSON_MODE=False
 
-    def __init__(self, config_key: str):
+    def __init__(self, config_key=''):
         # This key is used to locate nested configuration entries
         self._CONFIG_KEY = config_key
         self.config = None
@@ -163,10 +138,38 @@ class ConfigGPT:
     def chat_sample(self) -> Dict[str, List[str]]:
         return self._config_get('chat_sample', self._CHAT_SAMPLE)
 
-    @property
-    def json_sample(self) -> Dict[str, List]:
-        return self._config_get('json_sample', self._JSON_SCHEMA)
+    # @property
+    # def json_sample(self) -> Dict[str, List]:
+    #     json.loads(self._config_get('json_sample', self._JSON_SAMPLE))
+    #     return self._config_get('json_sample', self._JSON_SAMPLE)
 
+    @property
+    def json_sample(self) -> Dict[str, List[TranslationList]]:
+        # Try to get sample from config file:
+        raw_samples = self._config_get('json_sample', None)
+        
+        # Use fallback if no configuration found
+        if raw_samples is None:
+            return self._JSON_SAMPLE
+        
+        # Convert OmegaConf structures to Python primitives
+        if OmegaConf.is_config(raw_samples):
+            raw_samples = OmegaConf.to_container(raw_samples, resolve=True)
+        
+        processed = {}
+        for lang, samples in raw_samples.items():
+            processed[lang] = [
+                TranslationList(
+                    TextList=[
+                        TextValue(ID=item['ID'], text=item['text'])
+                        for item in aSample.get('TextList', aSample) 
+                    ]
+                )
+                for aSample in samples
+            ]
+        
+        return processed
+    
     @property
     def rgx_capture(self) -> str:
         return self._config_get('rgx_capture', self._RGX_REMOVE)
@@ -176,10 +179,6 @@ class ConfigGPT:
         return self._config_get('json_mode', self._JSON_MODE)
 
     @property
-    def json_schema(self) -> str:
-        return self._JSON_SCHEMA
-
-    @property
     def temperature(self) -> float:
         return self._config_get('temperature', default=0.5)
 
@@ -187,3 +186,8 @@ class ConfigGPT:
     def top_p(self) -> float:
         return self._config_get('top_p', default=1)
     
+    @property
+    def max_tokens(self) -> float:
+        return self._config_get('max_tokens', default=self._MAX_TOKENS)
+    
+
