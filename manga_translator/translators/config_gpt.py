@@ -1,5 +1,6 @@
 import json
 from typing import List, Dict
+import langcodes
 from omegaconf import OmegaConf
 from pydantic import BaseModel
 
@@ -140,10 +141,18 @@ class ConfigGPT:
     def chat_sample(self) -> Dict[str, List[str]]:
         return self._config_get('chat_sample', self._CHAT_SAMPLE)
 
-    # @property
-    # def json_sample(self) -> Dict[str, List]:
-    #     json.loads(self._config_get('json_sample', self._JSON_SAMPLE))
-    #     return self._config_get('json_sample', self._JSON_SAMPLE)
+    def get_chat_sample(self, to_lang: str) -> List[str]:
+        """
+        Use `langcodes` to search for the language labeling and return the chat sample.
+        If the language is not found, return an empty list.
+        """
+    
+        for sampleLang, samples in self.chat_sample.items():
+            if langcodes.Language.find(sampleLang) == langcodes.Language.find(to_lang):
+                return samples
+        
+        return []
+
 
     @property
     def json_sample(self) -> Dict[str, List[TranslationList]]:
@@ -177,6 +186,18 @@ class ConfigGPT:
         
         return self._json_sample
     
+    def get_json_sample(self, to_lang: str) -> List[str]:
+        """
+        Use `langcodes` to search for the language labeling and return the chat sample.
+        If the language is not found, return an empty list.
+        """
+    
+        for sampleLang, samples in self.json_sample.items():
+            if langcodes.Language.find(sampleLang) == langcodes.Language.find(to_lang):
+                return samples
+        
+        return []
+ 
     @property
     def rgx_capture(self) -> str:
         return self._config_get('rgx_capture', self._RGX_REMOVE)

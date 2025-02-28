@@ -278,20 +278,22 @@ class _CommonGPTTranslator_JSON:
     def _assemble_request(self, to_lang: str, prompt: str) -> Dict:
         messages = [{'role': 'system', 'content': self.translator.chat_system_template.format(to_lang=to_lang)}]
         
-        jSample=self.translator.json_sample
-        if to_lang in jSample:
-            messages.append({'role': 'user', 'content': jSample[to_lang][0].model_dump_json()})
-            messages.append({'role': 'assistant', 'content': jSample[to_lang][1].model_dump_json()})
-        elif to_lang in self.translator.chat_sample:
+        jSample=self.translator.get_json_sample(to_lang)
+        if jSample:
+            messages.append({'role': 'user', 'content': jSample[0].model_dump_json()})
+            messages.append({'role': 'assistant', 'content': jSample[1].model_dump_json()})
+        else:
             # If no appropriate `json_sample` is available, but a `chat_sample` is found: 
             #   Convert and use the `chat_sample`
-            asJSON = [
-                self.text2json(self.translator.chat_sample[to_lang][0]).model_dump_json(),
-                self.text2json(self.translator.chat_sample[to_lang][1]).model_dump_json()
-            ]
+            chatSample=self.translator.chat_sample.get(to_lang)
+            if chatSample:
+                asJSON = [
+                    self.text2json(self.translator.chat_sample[0]).model_dump_json(),
+                    self.text2json(self.translator.chat_sample[1]).model_dump_json()
+                ]
 
-            messages.append({'role': 'user', 'content': asJSON[0]})
-            messages.append({'role': 'assistant', 'content': asJSON[1]})
+                messages.append({'role': 'user', 'content': asJSON[0]})
+                messages.append({'role': 'assistant', 'content': asJSON[1]})
 
 
         messages.append({'role': 'user', 'content': prompt})
