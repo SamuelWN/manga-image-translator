@@ -149,9 +149,10 @@ class OpenAITranslator(ConfigGPT, CommonTranslator):
     async def _request_translation(self, to_lang: str, prompt: str) -> str:
         messages = [{'role': 'system', 'content': self.chat_system_template.format(to_lang=to_lang)}]
         
-        if to_lang in self.chat_sample:
-            messages.append({'role': 'user', 'content': self.chat_sample[to_lang][0]})
-            messages.append({'role': 'assistant', 'content': self.chat_sample[to_lang][1]})
+        lang_chat_samples = self.get_chat_sample(to_lang)
+        if lang_chat_samples:
+            messages.append({'role': 'user', 'content': lang_chat_samples[0]})
+            messages.append({'role': 'assistant', 'content': lang_chat_samples[1]})
             
         messages.append({'role': 'user', 'content': prompt})
 
