@@ -35,6 +35,13 @@ chatgpt:
   gpt-3.5-turbo:
     temperature: 0.3
 
+ollama:
+  # Use the `OLLAMA_MODEL_CONF` key (`deepseek-r1`) to group together similar model specifications.
+  # e.g. Set the `rgx_capture` pattern to filter out the `think` portion for `deepseek-r1`-based models:
+  deepseek-r1:
+    rgx_capture: '<think>.*</think>\s*(.*)|(.*)'
+
+
 # The text to prepend to `User` messages to GPT before the text to translate.
 # Use {to_lang} to indicate where the target language name should be inserted.
 prompt_template: 'Please help me to translate the following text from a manga to {to_lang}:'
