@@ -186,7 +186,7 @@ class ConfigGPT:
         
         return self._json_sample
     
-    def get_json_sample(self, to_lang: str) -> List[str]:
+    def get_json_sample(self, to_lang: str) -> List[TranslationList]:
         """
         Use `langcodes` to search for the language labeling and return the chat sample.
         If the language is not found, return an empty list.
