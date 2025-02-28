@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict
 from omegaconf import OmegaConf
+import langcodes
 
 class ConfigGPT:
     _CHAT_SYSTEM_TEMPLATE = (
@@ -100,6 +101,18 @@ class ConfigGPT:
     def chat_sample(self) -> Dict[str, List[str]]:
         return self._config_get('chat_sample', self._CHAT_SAMPLE)
 
+    def get_chat_sample(self, to_lang: str) -> List[str]:
+        """
+        Use `langcodes` to search for the language labeling and return the chat sample.
+        If the language is not found, return an empty list.
+        """
+    
+        for sampleLang, samples in self.chat_sample.items():
+            if langcodes.Language.find(sampleLang) == langcodes.Language.find(to_lang):
+                return samples
+        
+        return []
+        
     @property
     def rgx_capture(self) -> str:
         return self._config_get('rgx_capture', self._RGX_REMOVE)
