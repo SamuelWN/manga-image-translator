@@ -14,6 +14,9 @@ except ImportError:
 
 class OpenAITranslator(ConfigGPT, CommonTranslator):
     _LANGUAGE_CODE_MAP = VALID_LANGUAGES
+    _LANGUAGE_CODE_MAP['CHS']='Simplified Chinese'
+    _LANGUAGE_CODE_MAP['CHT']='Traditional Chinese'
+
     _MAX_REQUESTS_PER_MINUTE = 200
     _TIMEOUT = 40
     _RETRY_ATTEMPTS = 3
