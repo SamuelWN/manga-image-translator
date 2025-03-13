@@ -1,5 +1,8 @@
 # Changelogs
 
+### 2025-03-13
+1. Use AI translators for translation
+
 ### 2023-11-11
 
 1. Added new OCR model `48px`
