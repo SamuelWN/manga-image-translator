@@ -20,6 +20,7 @@ on:
       - 'requirements.txt'
       - 'requirements-dev.txt'
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
