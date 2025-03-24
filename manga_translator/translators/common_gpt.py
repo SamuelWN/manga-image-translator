@@ -5,9 +5,9 @@ from abc import abstractmethod
 import time
 
 from .config_gpt import ConfigGPT, TextValue, TranslationList
-from .common import CommonTranslator, VALID_LANGUAGES
+from .common import CommonTranslator, LanguageUnsupportedException, VALID_LANGUAGES
 from typing import List, Dict
-
+from langcodes import Language
 
 
 class CommonGPTTranslator(ConfigGPT, CommonTranslator):
@@ -56,6 +56,46 @@ class CommonGPTTranslator(ConfigGPT, CommonTranslator):
 
     def parse_args(self, args: CommonTranslator):
         self.config = args.chatgpt_config
+    
+    def supports_languages(self, from_lang: str, to_lang: str, fatal: bool = False) -> bool:
+        """
+        Check if the translator supports translation between the specified languages.
+        
+        Assumes that all valid languages are supported by the GPT model.
+        A language is considered "valid" if it is either:
+        - Considered valid by `langcodes`
+        - In the `VALID_LANGUAGES` list
+
+        Args:
+            from_lang: The source language code ('auto' is valid for source)
+            to_lang: The target language code
+            fatal: If True, raises LanguageUnsupportedException for invalid languages
+            
+        Returns:
+            bool: True if both languages are supported, False otherwise
+            
+        Raises:
+            LanguageUnsupportedException: If fatal=True and a language is unsupported
+        """
+        supported_src = ['auto'] + list(VALID_LANGUAGES)
+        supported_tgt = list(VALID_LANGUAGES)
+        
+        def validate(lang: str, valid_list: list) -> bool:
+            if Language(lang).is_valid() or lang in valid_list:
+                return True
+            
+            if fatal:
+                raise LanguageUnsupportedException(
+                    lang,
+                    self.__class__.__name__,
+                    valid_list
+                )
+            
+            return False
+
+        return (validate(from_lang, supported_src) and 
+                validate(to_lang, supported_tgt))
+
 
     @abstractmethod
     def count_tokens(self, text: str) -> int:
@@ -183,7 +223,7 @@ class CommonGPTTranslator(ConfigGPT, CommonTranslator):
             for id_num, query in enumerate(queryList, start=1):
                 prompt += f"\n<|{id_num}|>{query.strip()}"
 
-            return prompt            
+            return prompt
 
         # Test if batching is necessary
         #   Chunking is likely only necessary in edge-cases 
